@@ -1,5 +1,7 @@
 #!/usr/bin/python3
-"""For place review objects"""
+"""
+For place review objects
+"""
 
 from api.v1.views import app_views
 from flask import jsonify, make_response, request, abort
