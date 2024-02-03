@@ -1,5 +1,7 @@
 #!/usr/bin/python3
-"""For Place Object"""
+"""
+For Place Object
+"""
 
 from api.v1.views import app_views
 from flask import jsonify, make_response, request, abort
