@@ -1,93 +1,192 @@
 #!/usr/bin/python3
-"""
-For Place Object
-"""
+"""Contains the places """
+from flask import jsonify, request
+from werkzeug.exceptions import NotFound, MethodNotAllowed, BadRequest
 
 from api.v1.views import app_views
-from flask import jsonify, make_response, request, abort
-from models import storage
-from models.place import Place
+from models import storage, storage_t
+from models.amenity import Amenity
 from models.city import City
+from models.place import Place
+from models.state import State
 from models.user import User
 
 
-@app_views.route('/cities/<city_id>/places', strict_slashes=False)
-def all_places(city_id):
-    """ display all places objects"""
-    city = storage.get(City, city_id)
-    if city is None:
-        abort(404)
-    response = []
-    places = city.places
-    for place in places:
-        response.append(place.to_dict())
-    return jsonify(response)
-
-
-@app_views.route('/places/<place_id>', strict_slashes=False)
-def place_by_id(place_id=None):
-    """ display place object"""
-    response = storage.get(Place, place_id)
-    if response is None:
-        abort(404)
-    return jsonify(response.to_dict())
-
-
-@app_views.route('/places/<place_id>', methods=['DELETE'],
-                 strict_slashes=False)
-def del_place(place_id=None):
-    """ delete place by id """
-    if place_id is None:
-        abort(404)
+@app_views.route('/cities/<city_id>/places', methods=['GET', 'POST'])
+@app_views.route('/places/<place_id>', methods=['GET', 'DELETE', 'PUT'])
+def handle_places(city_id=None, place_id=None):
+    """handler for the places"""
+    handlers = {
+        'GET': get_places,
+        'DELETE': remove_place,
+        'POST': add_place,
+        'PUT': update_place
+    }
+    if request.method in handlers:
+        return handlers[request.method](city_id, place_id)
     else:
-        trash = storage.get(Place, place_id)
-        if trash is not None:
-            storage.delete(trash)
+        raise MethodNotAllowed(list(handlers.keys()))
+
+
+def get_places(city_id=None, place_id=None):
+    """Gets the place """
+    if city_id:
+        city = storage.get(City, city_id)
+        if city:
+            all_places = []
+            if storage_t == 'db':
+                all_places = list(city.places)
+            else:
+                all_places = list(filter(
+                    lambda x: x.city_id == city_id,
+                    storage.all(Place).values()
+                ))
+            places = list(map(lambda x: x.to_dict(), all_places))
+            return jsonify(places)
+    elif place_id:
+        place = storage.get(Place, place_id)
+        if place:
+            return jsonify(place.to_dict())
+    raise NotFound()
+
+
+def remove_place(city_id=None, place_id=None):
+    """Removes a place"""
+    if place_id:
+        place = storage.get(Place, place_id)
+        if place:
+            storage.delete(place)
             storage.save()
-            return make_response(jsonify({}), 200)
-        else:
-            abort(404)
+            return jsonify({}), 200
+    raise NotFound()
 
 
-@app_views.route('/cities/<city_id>/places', methods=['POST'],
-                 strict_slashes=False)
-def create_place(city_id):
-    """ create new place object"""
-    if city_id is None:
-        abort(404)
+def add_place(city_id=None, place_id=None):
+    """Adds a new place"""
     city = storage.get(City, city_id)
-    if city is None:
-        abort(404)
-    body = request.get_json()
-    if body is None or type(body) is not dict:
-        abort(400, 'Not a JSON')
-    if 'name' not in body.keys():
-        abort(400, 'Missing name')
-    if 'user_id' not in body.keys():
-        abort(400, 'Missing user_id')
-    if storage.get(User, body['user_id']) is None:
-        abort(400)
-    body['city_id'] = city_id
-    obj = Place(**body)
-    obj.save()
-    return make_response(jsonify(obj.to_dict()), 201)
+    if not city:
+        raise NotFound()
+    data = request.get_json()
+    if type(data) is not dict:
+        raise BadRequest(description='Not a JSON')
+    if 'user_id' not in data:
+        raise BadRequest(description='Missing user_id')
+    user = storage.get(User, data['user_id'])
+    if not user:
+        raise NotFound()
+    if 'name' not in data:
+        raise BadRequest(description='Missing name')
+    data['city_id'] = city_id
+    new_place = Place(**data)
+    new_place.save()
+    return jsonify(new_place.to_dict()), 201
 
 
-@app_views.route('/places/<place_id>', methods=['PUT'], strict_slashes=False)
-def update_place(place_id=None):
-    """ update place objects"""
-    response = storage.get(Place, place_id)
-    if place_id is None or response is None:
-        abort(404)
-    try:
-        new = request.get_json()
-    except Exception:
-        pass
-    if new is None or type(new) is not dict:
-        abort(400, 'Not a JSON')
-    for key in new.keys():
-        if key != 'id' and key != 'created_at' and key != 'city_id' and\
-           key != 'user_id' and key != 'updated_at':
-            setattr(response, key, new[key])
-    response.save()
-    return make_response(jsonify(response.to_dict()), 200)
+def update_place(city_id=None, place_id=None):
+    """Updates the place"""
+    xkeys = ('id', 'user_id', 'city_id', 'created_at', 'updated_at')
+    place = storage.get(Place, place_id)
+    if place:
+        data = request.get_json()
+        if type(data) is not dict:
+            raise BadRequest(description='Not a JSON')
+        for key, value in data.items():
+            if key not in xkeys:
+                setattr(place, key, value)
+        place.save()
+        return jsonify(place.to_dict()), 200
+    raise NotFound()
+
+
+@app_views.route('/places_search', methods=['POST'])
+def find_places():
+    """Finds a place"""
+    data = request.get_json()
+    if type(data) is not dict:
+        raise BadRequest(description='Not a JSON')
+    all_places = storage.all(Place).values()
+    places = []
+    places_id = []
+    keys_status = (
+        all([
+            'states' in data and type(data['states']) is list,
+            'states' in data and len(data['states'])
+        ]),
+        all([
+            'cities' in data and type(data['cities']) is list,
+            'cities' in data and len(data['cities'])
+        ]),
+        all([
+            'amenities' in data and type(data['amenities']) is list,
+            'amenities' in data and len(data['amenities'])
+        ])
+    )
+    if keys_status[0]:
+        for state_id in data['states']:
+            if not state_id:
+                continue
+            state = storage.get(State, state_id)
+            if not state:
+                continue
+            for city in state.cities:
+                new_places = []
+                if storage_t == 'db':
+                    new_places = list(
+                        filter(lambda x: x.id not in places_id, city.places)
+                    )
+                else:
+                    new_places = []
+                    for place in all_places:
+                        if place.id in places_id:
+                            continue
+                        if place.city_id == city.id:
+                            new_places.append(place)
+                places.extend(new_places)
+                places_id.extend(list(map(lambda x: x.id, new_places)))
+    if keys_status[1]:
+        for city_id in data['cities']:
+            if not city_id:
+                continue
+            city = storage.get(City, city_id)
+            if city:
+                new_places = []
+                if storage_t == 'db':
+                    new_places = list(
+                        filter(lambda x: x.id not in places_id, city.places)
+                    )
+                else:
+                    new_places = []
+                    for place in all_places:
+                        if place.id in places_id:
+                            continue
+                        if place.city_id == city.id:
+                            new_places.append(place)
+                places.extend(new_places)
+    del places_id
+    if all([not keys_status[0], not keys_status[1]]) or not data:
+        places = all_places
+    if keys_status[2]:
+        amenity_ids = []
+        for amenity_id in data['amenities']:
+            if not amenity_id:
+                continue
+            amenity = storage.get(Amenity, amenity_id)
+            if amenity and amenity.id not in amenity_ids:
+                amenity_ids.append(amenity.id)
+        del_indices = []
+        for place in places:
+            place_amenities_ids = list(map(lambda x: x.id, place.amenities))
+            if not amenity_ids:
+                continue
+            for amenity_id in amenity_ids:
+                if amenity_id not in place_amenities_ids:
+                    del_indices.append(place.id)
+                    break
+        places = list(filter(lambda x: x.id not in del_indices, places))
+    result = []
+    for place in places:
+        obj = place.to_dict()
+        if 'amenities' in obj:
+            del obj['amenities']
+        result.append(obj)
+    return jsonify(result)
