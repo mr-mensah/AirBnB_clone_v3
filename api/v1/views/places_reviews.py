@@ -26,7 +26,7 @@ def handle_reviews(place_id=None, review_id=None):
 
 
 def get_reviews(place_id=None, review_id=None):
-    '"""Gets the review"""
+    """Gets the review"""
     if place_id:
         place = storage.get(Place, place_id)
         if place:
