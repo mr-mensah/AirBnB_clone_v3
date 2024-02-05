@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""web app"""
+"""This is the API built with Flask for the AirBnB Clone"""
 import os
 from flask import Flask, jsonify
 from flask_cors import CORS
