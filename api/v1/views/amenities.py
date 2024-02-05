@@ -64,7 +64,7 @@ def add_amenity(amenity_id=None):
 
 
 def update_amenity(amenity_id=None):
-   """Updates the amenity"""
+    """Updates the amenity"""
     xkeys = ('id', 'created_at', 'updated_at')
     all_amenities = storage.all(Amenity).values()
     res = list(filter(lambda x: x.id == amenity_id, all_amenities))

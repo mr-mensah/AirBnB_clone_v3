@@ -28,7 +28,7 @@ def handle_states(state_id=None):
 
 
 def get_states(state_id=None):
-   """Gets the state"""
+    """Gets the state"""
     all_states = storage.all(State).values()
     if state_id:
         res = list(filter(lambda x: x.id == state_id, all_states))

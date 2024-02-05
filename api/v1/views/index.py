@@ -14,6 +14,7 @@ from models.state import State
 from models.user import User
 import json
 
+
 @app_views.route('/status')
 def get_status():
     '''Gets the status of the API.
